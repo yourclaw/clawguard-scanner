@@ -1,0 +1,59 @@
+{
+  "name": "@yourclaw/clawguard-scanner",
+  "version": "0.1.0",
+  "description": "Security scanner for AI agent skills",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "biome check src/",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist/"
+  ],
+  "dependencies": {
+    "@yourclaw/clawguard-rules": "^0.1.0",
+    "execa": "^9.0.0",
+    "yaml": "^2.3.0",
+    "zod": "^3.22.0"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourclaw/clawguard-scanner.git"
+  },
+  "keywords": [
+    "security",
+    "scanning",
+    "ai-agent",
+    "mcp",
+    "prompt-injection",
+    "clawguard"
+  ]
+}
