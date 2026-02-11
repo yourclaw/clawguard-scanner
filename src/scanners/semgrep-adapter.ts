@@ -67,7 +67,7 @@ export async function scanWithSemgrep(
 		}
 		args.push(skillPath);
 
-		const result = await runCommand("semgrep", args);
+		const result = await runCommand("semgrep", args, { timeout: 180_000 });
 
 		let parsed: SemgrepResult;
 		try {
@@ -115,21 +115,26 @@ export async function scanWithSemgrep(
 			}),
 		};
 	} catch (error) {
-		const err = error as { stdout?: string; stderr?: string; exitCode?: number | string };
+		const err = error as { stdout?: string; stderr?: string; exitCode?: number | string; killed?: boolean };
+		const elapsed = Date.now() - start;
+		const isTimeout = err.exitCode === null || err.exitCode === undefined || err.killed;
+		const reason = isTimeout
+			? `semgrep timed out after ${Math.round(elapsed / 1000)}s (limit: 180s)`
+			: `semgrep error: ${error instanceof Error ? error.message : String(error)}`;
 		return {
 			scanner: "semgrep",
 			status: "error",
 			findings: [],
-			message: `semgrep error: ${error instanceof Error ? error.message : String(error)}`,
-			durationMs: Date.now() - start,
+			message: reason,
+			durationMs: elapsed,
 			logs: formatLogs({
 				command: "semgrep",
 				args: ["scan", "--json", "--quiet", configPath ? `--config ${configPath}` : "--config auto", skillPath],
 				stdout: err.stdout,
 				stderr: err.stderr,
-				durationMs: Date.now() - start,
+				durationMs: elapsed,
 				exitCode: err.exitCode,
-				error: error instanceof Error ? error.message : String(error),
+				error: reason,
 			}),
 		};
 	}

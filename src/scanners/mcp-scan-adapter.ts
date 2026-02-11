@@ -51,37 +51,10 @@ export async function scanWithMcpScan(
 
 	try {
 		// Use --skills to scan the skill directory for agent-specific threats
-		const result = await runCommand("mcp-scan", args);
+		// mcp-scan does AI analysis so it needs a generous timeout
+		const result = await runCommand("mcp-scan", args, { timeout: 300_000 });
 
-		const findings: Finding[] = [];
-		try {
-			const parsed = JSON.parse(result.stdout);
-
-			// mcp-scan --skills outputs skill analysis results
-			// Handle array of findings or object with findings/issues
-			const items = Array.isArray(parsed)
-				? parsed
-				: parsed.findings ?? parsed.issues ?? parsed.results ?? [];
-
-			for (const item of items) {
-				if (item.finding || item.issue || item.message || item.description) {
-					findings.push({
-						id: `MCP-${item.id ?? item.rule_id ?? "UNKNOWN"}`,
-						name: item.name ?? item.finding ?? item.title ?? "MCP Security Issue",
-						severity: mapSeverity(item.severity),
-						category: item.category ?? "mcp",
-						message:
-							item.description ?? item.message ?? item.finding ?? "MCP issue detected",
-						scanner: "mcp-scan",
-						evidence: item.evidence ?? item.snippet,
-						filePath: item.file ?? item.filePath,
-						lineNumber: item.line ?? item.lineNumber,
-					});
-				}
-			}
-		} catch {
-			// Non-JSON output — mcp-scan may print status text when no issues found
-		}
+		const findings = parseMcpScanOutput(result.stdout);
 
 		return {
 			scanner: "mcp-scan",
@@ -98,76 +71,109 @@ export async function scanWithMcpScan(
 			}),
 		};
 	} catch (error) {
-		// mcp-scan exits non-zero when it finds issues — parse stdout
-		const err = error as { stdout?: string; stderr?: string; exitCode?: number };
+		// mcp-scan exits non-zero when it finds issues — try to parse stdout
+		const err = error as { stdout?: string; stderr?: string; exitCode?: number | string; killed?: boolean };
+		const elapsed = Date.now() - start;
+
 		if (err.stdout) {
-			try {
-				const parsed = JSON.parse(err.stdout);
-				const items = Array.isArray(parsed)
-					? parsed
-					: parsed.findings ?? parsed.issues ?? parsed.results ?? [];
-
-				const findings: Finding[] = items
-					.filter(
-						(item: Record<string, unknown>) =>
-							item.finding || item.issue || item.message || item.description,
-					)
-					.map((item: Record<string, unknown>) => ({
-						id: `MCP-${(item.id as string) ?? (item.rule_id as string) ?? "UNKNOWN"}`,
-						name:
-							(item.name as string) ??
-							(item.finding as string) ??
-							(item.title as string) ??
-							"MCP Security Issue",
-						severity: mapSeverity(item.severity as string),
-						category: (item.category as string) ?? "mcp",
-						message:
-							(item.description as string) ??
-							(item.message as string) ??
-							(item.finding as string) ??
-							"MCP issue detected",
-						scanner: "mcp-scan",
-						evidence: (item.evidence as string) ?? (item.snippet as string),
-						filePath: (item.file as string) ?? (item.filePath as string),
-						lineNumber: (item.line as number) ?? (item.lineNumber as number),
-					}));
-
-				if (findings.length > 0) {
-					return {
-						scanner: "mcp-scan",
-						status: "success",
-						findings,
-						durationMs: Date.now() - start,
-						logs: formatLogs({
-							command: "mcp-scan",
-							args,
-							stdout: err.stdout,
-							stderr: err.stderr,
-							durationMs: Date.now() - start,
-							exitCode: err.exitCode,
-						}),
-					};
-				}
-			} catch {
-				// Fall through
+			const findings = parseMcpScanOutput(err.stdout);
+			if (findings.length > 0) {
+				return {
+					scanner: "mcp-scan",
+					status: "success",
+					findings,
+					durationMs: elapsed,
+					logs: formatLogs({
+						command: "mcp-scan",
+						args,
+						stdout: err.stdout,
+						stderr: err.stderr,
+						durationMs: elapsed,
+						exitCode: err.exitCode,
+					}),
+				};
 			}
 		}
+
+		const isTimeout = err.exitCode === null || err.exitCode === undefined || err.killed;
+		const reason = isTimeout
+			? `mcp-scan timed out after ${Math.round(elapsed / 1000)}s (limit: 300s)`
+			: `mcp-scan error: ${error instanceof Error ? error.message : String(error)}`;
 
 		return {
 			scanner: "mcp-scan",
 			status: "error",
 			findings: [],
-			message: `mcp-scan error: ${error instanceof Error ? error.message : String(error)}`,
-			durationMs: Date.now() - start,
+			message: reason,
+			durationMs: elapsed,
 			logs: formatLogs({
 				command: "mcp-scan",
 				args,
 				stdout: err.stdout,
 				stderr: err.stderr,
-				durationMs: Date.now() - start,
+				durationMs: elapsed,
 				exitCode: err.exitCode,
-				error: error instanceof Error ? error.message : String(error),
+				error: reason,
 			}),
 		};
 	}
+}
+
+/**
+ * Parse mcp-scan JSON output into findings.
+ * The output is structured as: { "<path>": { issues: [...], labels: [...], ... } }
+ */
+function parseMcpScanOutput(stdout: string): Finding[] {
+	const findings: Finding[] = [];
+	try {
+		const parsed = JSON.parse(stdout);
+
+		// Handle the nested path structure: { "/tmp/path": { issues: [...] } }
+		const entries = typeof parsed === "object" && !Array.isArray(parsed) ? Object.values(parsed) : [parsed];
+
+		for (const entry of entries) {
+			const entryObj = entry as Record<string, unknown>;
+
+			// Extract issues from the entry (the actual mcp-scan format)
+			const issues = (entryObj?.issues ?? []) as Array<Record<string, unknown>>;
+			for (const issue of issues) {
+				const code = (issue.code as string) ?? "UNKNOWN";
+				const message = (issue.message as string) ?? "MCP issue detected";
+				const extraData = issue.extra_data as Record<string, unknown> | null;
+				const riskScore = extraData?.risk_score as number | undefined;
+				const issueSeverity = (extraData?.severity as string) ?? (riskScore != null && riskScore >= 0.7 ? "high" : riskScore != null && riskScore >= 0.4 ? "medium" : "low");
+
+				findings.push({
+					id: `MCP-${code}`,
+					name: code,
+					severity: mapSeverity(issueSeverity),
+					category: "mcp",
+					message,
+					scanner: "mcp-scan",
+					evidence: extraData?.reason as string | undefined,
+				});
+			}
+
+			// Also try flat array formats (findings/results)
+			const flatItems = (entryObj?.findings ?? entryObj?.results ?? []) as Array<Record<string, unknown>>;
+			for (const item of flatItems) {
+				if (item.finding || item.issue || item.message || item.description) {
+					findings.push({
+						id: `MCP-${(item.id as string) ?? (item.rule_id as string) ?? "UNKNOWN"}`,
+						name: (item.name as string) ?? (item.finding as string) ?? "MCP Security Issue",
+						severity: mapSeverity(item.severity as string),
+						category: (item.category as string) ?? "mcp",
+						message: (item.description as string) ?? (item.message as string) ?? "MCP issue detected",
+						scanner: "mcp-scan",
+						evidence: (item.evidence as string) ?? (item.snippet as string),
+						filePath: (item.file as string) ?? (item.filePath as string),
+						lineNumber: (item.line as number) ?? (item.lineNumber as number),
+					});
+				}
+			}
+		}
+	} catch {
+		// Non-JSON output — mcp-scan may print status text when no issues found
+	}
+	return findings;
 }

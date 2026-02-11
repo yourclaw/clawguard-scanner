@@ -85,7 +85,17 @@ export async function scanSkill(
 
 	// Score and determine status
 	const score = scoreFindings(allFindings);
-	const status = determineScanStatus(score);
+	let status = determineScanStatus(score);
+
+	// If a critical scanner errored, the scan is incomplete — don't mark as "passed"
+	const CRITICAL_SCANNERS = new Set(["semgrep", "gitleaks"]);
+	const hasCriticalError = scannerResults.some(
+		(r) => r.status === "error" && CRITICAL_SCANNERS.has(r.scanner),
+	);
+	if (hasCriticalError && status === "passed") {
+		status = "error";
+	}
+
 	const recommendation = determineRecommendation(status);
 
 	return {
