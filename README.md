@@ -59,7 +59,7 @@ skipped without failing the overall scan.
 | **Builtin Pattern Matcher** | `@yourclaw/clawguard-rules` | Prompt injection, secrets, malware, permissions | Built-in |
 | **Gitleaks** | [gitleaks](https://github.com/gitleaks/gitleaks) | Hardcoded secrets & credentials | Optional |
 | **Semgrep** | [semgrep](https://semgrep.dev) | Custom code patterns (eval, shell injection) | Optional |
-| **MCP-Scan** | [mcp-scan](https://github.com/anthropics/mcp-scan) | MCP server configuration issues | Optional |
+| **MCP-Scan** | [mcp-scan](https://github.com/invariantlabs-ai/mcp-scan) | MCP server configuration issues | Optional |
 | **npm audit** | npm | Known CVEs in dependencies | Optional |
 | **AI Review** | Claude API | Ambiguous cases needing judgement | Optional |
 
@@ -182,6 +182,14 @@ make test       # vitest run
 make lint       # biome check
 make clean      # remove dist/ and node_modules/
 ```
+
+---
+
+## Contributing
+
+See the main [CONTRIBUTING.md](https://github.com/yourclaw/clawguard/blob/main/CONTRIBUTING.md)
+for guidelines. The scanner is a great place to contribute new integrations —
+each adapter is a self-contained file in `src/scanners/`.
 
 ---
 
