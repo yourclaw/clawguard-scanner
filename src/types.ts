@@ -62,6 +62,10 @@ export interface ScanReport {
 	recommendation: Recommendation;
 	scannedAt: string;
 	durationMs: number;
+	/** Findings that were suppressed by a .clawguard-ignore file */
+	suppressed?: Finding[];
+	/** Number of findings suppressed */
+	suppressionCount?: number;
 }
 
 export interface SeverityScore {
@@ -79,4 +83,16 @@ export interface FindingsCounts {
 	medium: number;
 	low: number;
 	info: number;
+}
+
+export interface Suppression {
+	id: string;
+	rule: string;
+	file: string;
+	scanner: string;
+	justification: string;
+	addedBy: string;
+	addedAt: string;
+	/** URL to the PR or issue that discovered this false positive (for audit trail) */
+	reference?: string;
 }

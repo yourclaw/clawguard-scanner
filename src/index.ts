@@ -12,6 +12,9 @@ export {
 	determineRecommendation,
 } from "./severity-scorer";
 
+// Suppression / ignore support
+export { loadSuppressions, filterFindings } from "./ignore";
+
 // Reporters
 export { formatJSON } from "./reporters/json";
 export { formatMarkdown } from "./reporters/markdown";
@@ -34,6 +37,7 @@ export type {
 	Severity,
 	SeverityScore,
 	SkillMetadata,
+	Suppression,
 	TrustLevel,
 	Recommendation,
 	FindingsCounts,

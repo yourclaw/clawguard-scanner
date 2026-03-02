@@ -121,6 +121,98 @@ with GitHub Code Scanning, VS Code, and other SARIF-compatible tools.
 
 ---
 
+## Suppressing Findings (`.clawguard-ignore`)
+
+The scanner supports a `.clawguard-ignore` JSON file for suppressing known
+false positives. Place it in your skill directory (or any parent directory) and
+the scanner will automatically discover it by walking up the directory tree.
+
+This feature was introduced to support the
+[YourClaw OpenClaw fork](https://github.com/yourclaw/openclaw) upstream sync
+pipeline, where automated scans of upstream releases can surface false positives
+that need to be documented and suppressed transparently. See
+[PR #4](https://github.com/yourclaw/openclaw/pull/4) for the initial set of
+suppressions and the analysis behind each one.
+
+You can also pass an explicit path via the `ignoreFile` option:
+
+```typescript
+const report = await scanSkill("/path/to/skill", {
+  ignoreFile: "/path/to/.clawguard-ignore",
+});
+
+// Suppressed findings are still available for auditing
+console.log(report.suppressed);        // Finding[] (what was filtered out)
+console.log(report.suppressionCount);  // number
+```
+
+### File format
+
+```json
+{
+  "suppressions": [
+    {
+      "id": "unique-id-for-this-suppression",
+      "rule": "the-rule-name-or-finding-id",
+      "file": "path/fragment/to/match",
+      "scanner": "semgrep",
+      "justification": "Why this is a false positive",
+      "addedBy": "your-name",
+      "addedAt": "2026-03-02",
+      "reference": "https://github.com/your-org/your-repo/pull/123"
+    }
+  ]
+}
+```
+
+### Field reference
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `id` | Yes | Unique identifier for this suppression entry |
+| `rule` | Yes | Must match the finding's `name` or `id` field |
+| `file` | Yes | Substring match against the finding's file path |
+| `scanner` | Yes | Which scanner produced the finding (`semgrep`, `clawguard-rules`, `gitleaks`, etc.) |
+| `justification` | Yes | Explanation of why this finding is a false positive |
+| `addedBy` | Yes | Person or bot that added the suppression |
+| `addedAt` | Yes | Date the suppression was added (ISO 8601 date) |
+| `reference` | No | URL to the PR, issue, or discussion that discovered and analyzed the finding |
+
+### Matching logic
+
+A finding is suppressed when **both** conditions are true:
+
+1. `suppression.rule` equals the finding's `name` **or** `id`
+2. The finding's file path **contains** `suppression.file` as a substring
+
+### Audit trail
+
+Every suppression should include a `reference` URL pointing to the PR or issue
+where the finding was discovered, analyzed, and confirmed as a false positive.
+This creates a transparent audit trail so that anyone reviewing suppressions
+can understand the full context behind each decision.
+
+For automated pipelines (e.g. upstream sync workflows), the `reference` should
+link to the sync PR that first flagged the finding — giving future reviewers a
+direct path to the scan results, code analysis, and team discussion.
+
+### When to suppress vs. when to fix
+
+Use suppressions **only** for confirmed false positives — cases where the
+scanner flags code that is actually safe. If a finding points to a real issue,
+fix the code instead of suppressing it.
+
+Good reasons to suppress:
+- A `shell: true` flag is used safely with hardcoded arguments (no user input)
+- A unicode escape sequence is used for data formatting, not obfuscation
+- A regex pattern triggers a secrets scanner but is not an actual secret
+
+Bad reasons to suppress:
+- The finding is inconvenient to fix right now
+- You disagree with the rule's severity (file an issue on the rule instead)
+
+---
+
 ## Key Types
 
 ```typescript
