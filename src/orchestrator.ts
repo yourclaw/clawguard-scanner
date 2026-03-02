@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import type {
 	Finding,
 	ScanReport,
@@ -10,6 +11,7 @@ import {
 	determineScanStatus,
 	determineRecommendation,
 } from "./severity-scorer";
+import { loadSuppressions, filterFindings } from "./ignore";
 import { scanPromptInjection } from "./scanners/prompt-injection";
 import { scanWithGitleaks } from "./scanners/gitleaks-adapter";
 import { scanWithSemgrep } from "./scanners/semgrep-adapter";
@@ -26,6 +28,8 @@ export interface ScanOptions {
 	scannerTimeout?: number;
 	/** Custom semgrep config path */
 	semgrepConfig?: string;
+	/** Path to a .clawguard-ignore file. If omitted, walks up from the skill directory. */
+	ignoreFile?: string;
 }
 
 /**
@@ -83,8 +87,19 @@ export async function scanSkill(
 		allFindings = allFindings.concat(aiResult.findings);
 	}
 
-	// Score and determine status
-	const score = scoreFindings(allFindings);
+	// Apply suppressions from .clawguard-ignore
+	const suppressions = loadSuppressions(
+		options.ignoreFile,
+		dirname(skill.filePath),
+	);
+	const { findings: activeFindings, suppressed } = filterFindings(
+		allFindings,
+		suppressions,
+		skill.filePath,
+	);
+
+	// Score and determine status (only active, non-suppressed findings count)
+	const score = scoreFindings(activeFindings);
 	let status = determineScanStatus(score);
 
 	// If a critical scanner errored, the scan is incomplete — don't mark as "passed"
@@ -100,12 +115,14 @@ export async function scanSkill(
 
 	return {
 		skill,
-		findings: allFindings,
+		findings: activeFindings,
 		scanners: scannerResults,
 		score,
 		status,
 		recommendation,
 		scannedAt: new Date().toISOString(),
 		durationMs: Date.now() - start,
+		suppressed: suppressed.length > 0 ? suppressed : undefined,
+		suppressionCount: suppressed.length > 0 ? suppressed.length : undefined,
 	};
 }
